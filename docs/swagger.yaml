@@ -1,0 +1,464 @@
+openapi: "3.0.3"
+info:
+  title: Arena Ban API
+  description: |
+    REST API untuk sistem Arena Ban.
+    Mendukung autentikasi berbasis JWT, manajemen akun, dan reset password.
+  version: "1.0.0"
+  contact:
+    name: Arena Ban Dev Team
+
+servers:
+  - url: https://arena-ban.com/api
+    description: Production Server
+  - url: http://localhost:3000/api
+    description: Local Development
+
+tags:
+  - name: Auth
+    description: Autentikasi dan manajemen akun pengguna
+
+paths:
+  /auth/login:
+    post:
+      tags:
+        - Auth
+      summary: Login pengguna
+      description: Melakukan autentikasi dengan email dan password, mengembalikan JWT token jika berhasil.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+            example:
+              email: user@example.com
+              password: "password123"
+      responses:
+        "200":
+          description: Login berhasil
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/LoginResponse"
+              example:
+                status: success
+                message: login berhasil
+                data:
+                  token: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          description: Email atau password salah
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                status: error
+                message: password salah
+
+  /auth/register:
+    post:
+      tags:
+        - Auth
+      summary: Daftarkan akun baru (Admin/Sistem)
+      description: |
+        Admin atau sistem mendaftarkan email pengguna baru.
+        Sistem akan mengirimkan kode OTP ke email yang didaftarkan.
+        Pengguna kemudian harus memanggil endpoint `/auth/register/password` untuk menyelesaikan pendaftaran.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateAccountRequest"
+            example:
+              name: John Doe
+              email: johndoe@example.com
+              role: CASHIER
+      responses:
+        "201":
+          description: Kode OTP berhasil dikirim ke email
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+              example:
+                status: success
+                message: Kode verifikasi telah dikirim
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /auth/register/password:
+    post:
+      tags:
+        - Auth
+      summary: Set password setelah verifikasi OTP
+      description: |
+        Dipanggil oleh aplikasi mobile setelah pengguna menerima kode OTP dari email.
+        Pengguna mengirimkan token OTP beserta password baru untuk menyelesaikan pembuatan akun.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePasswordRequest"
+            example:
+              token: "123456"
+              password: "newpassword123"
+      responses:
+        "201":
+          description: Akun berhasil dibuat
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+              example:
+                status: success
+                message: Akun berhasil dibuat. Silakan login menggunakan email dan password Anda.
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /auth/verify-token:
+    post:
+      tags:
+        - Auth
+      summary: Verifikasi token OTP
+      description: |
+        Memverifikasi apakah token OTP masih valid dan belum kedaluwarsa.
+        Dapat digunakan sebelum memanggil endpoint set password untuk memastikan token masih aktif.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VerifyTokenRequest"
+            example:
+              token: "123456"
+      responses:
+        "200":
+          description: Token valid
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+              example:
+                status: success
+                message: token valid
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "410":
+          description: Token tidak valid atau sudah kedaluwarsa
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                status: error
+                message: token tidak valid atau kedaluwarsa
+
+  /auth/forgot-password:
+    post:
+      tags:
+        - Auth
+      summary: Kirim link reset password
+      description: |
+        Mengirimkan link reset password ke email yang terdaftar.
+        Demi keamanan, respons selalu mengembalikan pesan sukses meskipun email tidak terdaftar.
+        Link reset password berlaku selama **15 menit**.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ForgotPasswordRequest"
+            example:
+              email: user@example.com
+      responses:
+        "200":
+          description: Instruksi reset password dikirimkan (jika email terdaftar)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+              example:
+                status: success
+                message: Jika email terdaftar, instruksi reset password telah dikirimkan.
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /auth/reset-password:
+    post:
+      tags:
+        - Auth
+      summary: Reset password dengan token
+      description: |
+        Mereset password pengguna menggunakan token yang dikirim via email.
+        Token dapat dikirimkan melalui query parameter `?token=` atau di dalam request body.
+        Token hanya dapat digunakan **satu kali** dan berlaku selama **15 menit**.
+      parameters:
+        - name: token
+          in: query
+          required: false
+          description: Token reset password (alternatif dari token di request body)
+          schema:
+            type: string
+          example: "a1b2c3d4e5f6..."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VerifyResetPasswordRequest"
+            example:
+              token: "a1b2c3d4e5f6..."
+              new_password: "mynewpassword123"
+      responses:
+        "200":
+          description: Password berhasil diperbarui
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+              example:
+                status: success
+                message: Password berhasil diperbarui. Silakan login.
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT token yang diperoleh dari endpoint `/auth/login`
+
+  schemas:
+    # ==========================================
+    # REQUEST SCHEMAS
+    # ==========================================
+    LoginRequest:
+      type: object
+      required:
+        - email
+        - password
+      properties:
+        email:
+          type: string
+          format: email
+          example: user@example.com
+        password:
+          type: string
+          minLength: 8
+          example: "password123"
+
+    CreateAccountRequest:
+      type: object
+      required:
+        - name
+        - email
+        - role
+      properties:
+        name:
+          type: string
+          example: John Doe
+        email:
+          type: string
+          format: email
+          example: johndoe@example.com
+        role:
+          type: string
+          enum:
+            - ADMIN
+            - CASHIER
+            - WAREHOUSE
+            - CS
+          example: CASHIER
+
+    CreatePasswordRequest:
+      type: object
+      required:
+        - token
+        - password
+      properties:
+        token:
+          type: string
+          example: "123456"
+        password:
+          type: string
+          minLength: 8
+          example: "newpassword123"
+
+    VerifyTokenRequest:
+      type: object
+      required:
+        - token
+      properties:
+        token:
+          type: string
+          example: "123456"
+
+    ForgotPasswordRequest:
+      type: object
+      required:
+        - email
+      properties:
+        email:
+          type: string
+          format: email
+          example: user@example.com
+
+    VerifyResetPasswordRequest:
+      type: object
+      required:
+        - token
+        - new_password
+      properties:
+        token:
+          type: string
+          example: "a1b2c3d4e5f6..."
+        new_password:
+          type: string
+          minLength: 8
+          example: "mynewpassword123"
+
+    # ==========================================
+    # RESPONSE SCHEMAS
+    # ==========================================
+    LoginResponse:
+      type: object
+      properties:
+        token:
+          type: string
+          description: JWT access token untuk mengakses endpoint yang terproteksi
+          example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+
+    SuccessResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: success
+        message:
+          type: string
+          example: Operasi berhasil
+        data:
+          type: object
+          nullable: true
+
+    ErrorResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: error
+        message:
+          type: string
+          example: Pesan error
+
+    ValidationErrorResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: error
+        message:
+          type: string
+          example: validasi gagal
+        errors:
+          type: array
+          items:
+            $ref: "#/components/schemas/FieldError"
+
+    FieldError:
+      type: object
+      description: |
+        Pesan error per field dihasilkan oleh fungsi `ValidateStruct` (go-playground/validator).
+        Format pesan berdasarkan tag validator yang dipakai:
+        - `required` → "Field {Field} wajib diisi"
+        - `email`    → "Format {Field} tidak valid"
+        - `min`      → "{Field} minimal mengandung {n} karakter"
+        - `max`      → "{Field} maksimal mengandung {n} karakter"
+        - `oneof`    → "{Field} harus salah satu dari: {values}"
+        - lainnya    → "Field {Field} tidak valid"
+      properties:
+        field:
+          type: string
+          description: Nama field yang gagal validasi (nama struct field Go)
+          example: Email
+        message:
+          type: string
+          description: Pesan error hasil ValidateStruct
+          example: "Format Email tidak valid"
+
+  responses:
+    BadRequest:
+      description: Request tidak valid — format JSON salah atau validasi field gagal
+      content:
+        application/json:
+          schema:
+            oneOf:
+              - $ref: "#/components/schemas/ErrorResponse"
+              - $ref: "#/components/schemas/ValidationErrorResponse"
+          examples:
+            format_error:
+              summary: Format JSON tidak valid
+              value:
+                status: error
+                message: format data tidak valid
+            required_error:
+              summary: Field wajib tidak diisi (tag required)
+              value:
+                status: error
+                message: validasi gagal
+                errors:
+                  - field: Name
+                    message: "Field Name wajib diisi"
+                  - field: Email
+                    message: "Field Email wajib diisi"
+            email_error:
+              summary: Format email tidak valid (tag email)
+              value:
+                status: error
+                message: validasi gagal
+                errors:
+                  - field: Email
+                    message: "Format Email tidak valid"
+            min_error:
+              summary: Panjang field kurang dari minimum (tag min)
+              value:
+                status: error
+                message: validasi gagal
+                errors:
+                  - field: Password
+                    message: "Password minimal mengandung 8 karakter"
+            oneof_error:
+              summary: Nilai tidak termasuk dalam enum yang diizinkan (tag oneof)
+              value:
+                status: error
+                message: validasi gagal
+                errors:
+                  - field: Role
+                    message: "Role harus salah satu dari: ADMIN CASHIER WAREHOUSE CS"
+
+    InternalServerError:
+      description: Terjadi kesalahan internal pada server
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            status: error
+            message: terjadi kesalahan internal
+
+security:
+  - BearerAuth: []
