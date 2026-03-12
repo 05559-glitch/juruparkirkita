@@ -16,7 +16,6 @@ RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/
 WORKDIR /root/
 
 COPY --from=builder /arena-ban-bin .
-COPY --from=builder /app/.env .
 
 EXPOSE 3000
 
